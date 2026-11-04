@@ -7,7 +7,14 @@ A full-screen "now playing" view for [Spicetify](https://spicetify.app): big cov
 ## Features
 
 - **Three layouts:** cover beside the details, centred, or a TV-style view with a small cover in the corner
-- **Moving backgrounds:** blurred album art that swirls or drifts, or the artist's image, a solid colour from the art, or your theme colour. Sliders adjust the speed, zoom, blur, colour and dimming.
+- **Moving backgrounds** made from the album art (see [Backgrounds](#backgrounds)):
+  - blurred art that swirls or drifts
+  - a contour map or ridgelines, shaped like the cover and in its colours
+  - a soft gradient of the cover's colours
+  - a sand timer that drains as the song plays and turns over for the next one
+  - the artist's image, a solid colour from the art, or your theme colour
+
+  Sliders adjust the speed, zoom, blur, colour and dimming.
 - **Synced lyrics** from Spotify, or from [Lyrics Plus](https://github.com/spicetify/cli/tree/main/CustomApps/lyrics-plus) if you have it turned on
 - **Up next** and **Playing from**, so you can see what's coming and where it's playing from
 - **Controls:** like, shuffle and repeat, with an optional volume slider. Scroll the mouse wheel anywhere to change the volume.
@@ -19,6 +26,18 @@ A full-screen "now playing" view for [Spicetify](https://spicetify.app): big cov
 | Cover beside details | Centred | TV |
 | --- | --- | --- |
 | ![Cover beside details](screenshots/layout-beside.jpg) | ![Centred](screenshots/layout-centred.jpg) | ![TV: small cover in the corner](screenshots/layout-tv.jpg) |
+
+## Backgrounds
+
+The contour map and ridgelines take their shape from the cover, so each album gets its own landscape. Set **Terrain** to **Random** for drifting noise instead. The gradient blends the cover's main colours. The sand timer drains over the length of the song.
+
+| Contour map | Ridgelines |
+| --- | --- |
+| ![Contour map shaped like the cover](screenshots/bg-contours.jpg) | ![Ridgelines shaped like the cover](screenshots/bg-ridges.jpg) |
+| **Gradient** | **Sand timer** |
+| ![Gradient of the cover's colours](screenshots/bg-gradient.jpg) | ![Sand timer, halfway through a song](screenshots/bg-sand.jpg) |
+
+All of them move slowly, unless your system asks for reduced motion. They need WebGL, and fall back to the blurred art without it.
 
 ## Install
 

@@ -105,7 +105,15 @@
             ["art", "Blurred art"],
             ["artist", "Artist image"],
             ["color", "Solid colour from the art"],
+            ["contours", "Contour map from the art"],
+            ["ridges", "Ridgelines from the art"],
+            ["sand", "Sand timer for the song"],
+            ["gradient", "Gradient from the art"],
             ["theme", "Theme colour"],
+        ],
+        bgTerrain: [
+            ["cover", "Shaped like the cover"],
+            ["noise", "Random"],
         ],
         bgMotion: [
             ["swirl", "Swirl"],
@@ -164,6 +172,7 @@
     const DEFAULTS = {
         layout: "side",
         background: "art",
+        bgTerrain: "cover",
         bgMotion: "swirl",
         bgSpeed: 1,
         bgZoom: 1,
@@ -326,8 +335,8 @@
             albumUri: item.album?.uri || meta.album_uri || "",
             image: pickImage(item, coverPixels()),
             bgImage: pickImage(item, BG_SOURCE_MIN),
-            // Spotify's lyrics endpoint takes the cover's own (spotify:image:) URL.
-            lyricsImage: imageCandidates(item)[0]?.url || "",
+            // The cover's own (spotify:image:) URL, which the lyrics and colour requests take.
+            imageUri: imageCandidates(item)[0]?.url || "",
         };
     }
 
@@ -413,18 +422,26 @@
 .fsa-layer,
 .fsa-artist,
 .fsa-color,
+.fsa-gl,
 .fsa-shade {
     position: absolute;
     inset: 0;
 }
+.fsa-gl {
+    width: 100%;
+    height: 100%;
+}
 .fsa-blur,
 .fsa-artist,
-.fsa-color {
+.fsa-color,
+.fsa-gl {
     display: none;
 }
-#fsa-root:is(.fsa-mode-art, .fsa-mode-artist) .fsa-blur,
+/* Without WebGL, the shader backgrounds give way to the blurred art. */
+#fsa-root:is(.fsa-mode-art, .fsa-mode-artist, .fsa-mode-contours.fsa-no-gl, .fsa-mode-ridges.fsa-no-gl, .fsa-mode-gradient.fsa-no-gl, .fsa-mode-sand.fsa-no-gl) .fsa-blur,
 #fsa-root.fsa-mode-artist .fsa-artist,
-#fsa-root.fsa-mode-color .fsa-color {
+#fsa-root.fsa-mode-color .fsa-color,
+#fsa-root:is(.fsa-mode-contours, .fsa-mode-ridges, .fsa-mode-gradient, .fsa-mode-sand):not(.fsa-no-gl) .fsa-gl {
     display: block;
 }
 /* Each layer is its own stacking context so its two crossfading copies only stack against each other. */
@@ -1367,7 +1384,7 @@
     host.setAttribute("aria-label", "Full Screen Plus");
 
     // Background: an opaque base copy of the art plus two soft-edged copies drifting over it,
-    // the artist's image, or a solid colour. Each image has two slots to crossfade between.
+    // the artist's image, a solid colour or a contour map. Each image has two slots to crossfade between.
     const bg = el("div", "fsa-bg", host);
     const blur = el("div", "fsa-blur", bg);
     function bgCanvas(parent) {
@@ -1382,6 +1399,7 @@
     const artistLayer = el("div", "fsa-artist", bg);
     const artistImgs = [artImg("fsa-artist-img", artistLayer), artImg("fsa-artist-img", artistLayer)];
     const colorLayer = el("div", "fsa-color", bg);
+    const glCanvas = el("canvas", "fsa-gl", bg);
     el("div", "fsa-shade", bg);
 
     const stage = el("div", "fsa-stage", host);
@@ -1404,6 +1422,7 @@
         host.style.setProperty("--fsa-zoom", settings.bgZoom);
         host.style.setProperty("--fsa-dim", settings.bgDim);
         applySpeed();
+        syncGl();
         // Keep the lyrics layout while the next song's lyrics load, so it doesn't jump on every song change.
         const lyricsOn =
             settings.lyrics &&
@@ -1545,7 +1564,7 @@
 
     // ---------- Extras: artist image, solid colour, lyrics (fetched only when a setting needs them) ----------
 
-    const cache = { artistImage: new Map(), color: new Map(), lyrics: new Map() };
+    const cache = { artistImage: new Map(), colors: new Map(), lyrics: new Map() };
 
     function remember(map, key, value) {
         map.set(key, value);
@@ -1556,6 +1575,8 @@
         if (!isOpen || !currentTrack) return;
         if (settings.background === "artist") loadArtistImage(currentTrack);
         if (settings.background === "color") loadColor(currentTrack);
+        if (GL_BACKGROUNDS.includes(settings.background)) loadGlColors(currentTrack);
+        if (TERRAIN_BACKGROUNDS.includes(settings.background)) loadTerrain(currentTrack);
         if (settings.lyrics && !usingLyricsPlus()) loadLyrics(currentTrack);
     }
 
@@ -1608,23 +1629,81 @@
         artistFader.show([ok]);
     }
 
+    // Colours from the art, by the names Spicetify's colorExtractor uses ({} when there are none). Its
+    // endpoint fails in some Spotify versions, so Spotify's own colours for the cover back it up.
+    async function artColors(track) {
+        let colors = cache.colors.get(track.uri);
+        if (colors) return colors;
+        try {
+            colors = (await Spicetify.colorExtractor?.(track.uri)) ?? {};
+        } catch {
+            colors = {};
+        }
+        if (!pickColor(colors, ["VIBRANT_NON_ALARMING", "VIBRANT", "PROMINENT"])) {
+            try {
+                colors = await fetchExtractedColors(track.imageUri);
+            } catch {}
+        }
+        // Not remembered when nothing came back, so it's asked again next time.
+        if (Object.keys(colors).length) remember(cache.colors, track.uri, colors);
+        return colors;
+    }
+
+    // Spotify's raw, dark and light colours for a cover, under colorExtractor's names.
+    async function fetchExtractedColors(imageUri) {
+        const definition = Spicetify.GraphQL?.Definitions?.fetchExtractedColors;
+        if (!definition || !imageUri) return {};
+        const uri = imageUri.replace(/^https:\/\/i\.scdn\.co\/image\//, "spotify:image:");
+        const res = await Spicetify.GraphQL.Request(definition, { imageUris: [uri] });
+        const found = res?.data?.extractedColors?.[0];
+        // Spotify's stand-in greys for art it has no colours for.
+        if (!found || found.colorRaw?.isFallback) return {};
+        const raw = found.colorRaw?.hex;
+        return { VIBRANT_NON_ALARMING: raw, VIBRANT: raw, DARK_VIBRANT: found.colorDark?.hex, LIGHT_VIBRANT: found.colorLight?.hex };
+    }
+
+    // The first of the named colours that's there, as "#rrggbb", or "".
+    function pickColor(colors, names) {
+        return names.map((name) => colors[name]).find((hex) => /^#[0-9a-f]{6}$/i.test(hex ?? "")) ?? "";
+    }
+
+    function rgbOf(hex) {
+        return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    }
+
+    // HSL, with the hue in sixths of a turn (0 to 6) and the saturation and lightness 0 to 1.
+    function toHsl(rgb) {
+        const [r, g, b] = rgb.map((v) => v / 255);
+        const high = Math.max(r, g, b);
+        const low = Math.min(r, g, b);
+        const range = high - low;
+        const l = (high + low) / 2;
+        const s = range ? range / (1 - Math.abs(2 * l - 1)) : 0;
+        const h = !range ? 0 : high === r ? ((g - b) / range + 6) % 6 : high === g ? (b - r) / range + 2 : (r - g) / range + 4;
+        return [h, s, l];
+    }
+
+    function fromHsl([h, s, l]) {
+        const a = s * Math.min(l, 1 - l);
+        return [0, 8, 4].map((n) => {
+            const k = (n + h * 2) % 12;
+            return Math.round((l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))) * 255);
+        });
+    }
+
+    // The same hue with the lightness moved into [min, max], and the saturation raised to at least `minSaturation`.
+    function withLightness(rgb, [min, max], minSaturation = 0) {
+        const [h, s, l] = toHsl(rgb);
+        return fromHsl([h, Math.max(s, minSaturation), Math.min(Math.max(l, min), max)]);
+    }
+
     let colorToken = 0;
 
     async function loadColor(track) {
         const token = ++colorToken;
-        let hex = cache.color.get(track.uri);
-        if (hex === undefined) {
-            try {
-                const colors = await Spicetify.colorExtractor?.(track.uri);
-                hex = colors?.VIBRANT_NON_ALARMING || colors?.DARK_VIBRANT || colors?.DESATURATED || colors?.PROMINENT || "";
-                if (!/^#[0-9a-f]{6}$/i.test(hex)) hex = "";
-                remember(cache.color, track.uri, hex);
-            } catch {
-                hex = "";
-            }
-        }
+        const colors = await artColors(track);
         if (token !== colorToken || settings.background !== "color") return;
-        applyColor(hex);
+        applyColor(pickColor(colors, ["VIBRANT_NON_ALARMING", "DARK_VIBRANT", "DESATURATED", "PROMINENT"]));
     }
 
     // A solid background needs text that contrasts with it, so this overrides the theme's text colours.
@@ -1636,13 +1715,638 @@
             for (const name of vars) host.style.removeProperty(name);
             return;
         }
-        const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+        const [r, g, b] = rgbOf(hex);
         const rgb = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.6 ? "0, 0, 0" : "255, 255, 255";
         host.style.setProperty("--fsa-rgb-text", rgb);
         host.style.setProperty("--fsa-text", `rgb(${rgb})`);
         host.style.setProperty("--fsa-subtext", `rgba(${rgb}, 0.7)`);
         host.style.setProperty("--text-base", `rgb(${rgb})`);
         host.style.setProperty("--text-subdued", `rgba(${rgb}, 0.7)`);
+    }
+
+    // ---------- Shader backgrounds: contour map, ridgelines, gradient and sand timer ----------
+
+    // Drawn by WebGL shaders: the work is done per pixel on the GPU, at no more than GL_MAX_PX across, and
+    // the canvas is stretched over the screen like the blurred art. The gradient has no fine detail, so it
+    // can be drawn much smaller.
+    const GL_BACKGROUNDS = ["contours", "ridges", "gradient", "sand"];
+    // The ones that can be shaped like the cover.
+    const TERRAIN_BACKGROUNDS = ["contours", "ridges"];
+    const GL_MAX_PX = { contours: 1600, ridges: 1600, gradient: 640, sand: 1600 };
+    const GL_FPS = 30;
+    // How far through the noise the backgrounds move each second at the standard speed.
+    const GL_RATE = 0.012;
+    const GL_VERTEX = `#version 300 es
+// One triangle that covers the whole canvas.
+void main() {
+    gl_Position = vec4(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0, 0.0, 1.0);
+}`;
+    // The start of every fragment shader: their shared uniforms, noise and saturation.
+    const GL_COMMON = `#version 300 es
+precision highp float;
+uniform vec2 size;
+uniform float time;
+uniform float zoom;
+uniform float saturation;
+// The art's colours: dark, main and light.
+uniform vec3 low;
+uniform vec3 high;
+uniform vec3 line;
+out vec4 colour;
+
+// An integer hash, so the noise stays smooth however long it runs.
+uvec3 pcg3d(uvec3 v) {
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+    v ^= v >> 16u;
+    v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+    return v;
+}
+
+vec3 gradient(vec3 cell) {
+    return normalize(vec3(pcg3d(uvec3(cell))) * (2.0 / 4294967295.0) - 1.0);
+}
+
+#define CORNER(x, y, z) dot(gradient(i + vec3(x, y, z)), f - vec3(x, y, z))
+
+// Gradient noise. Every cell must be positive for the hash, so callers add an offset. f is taken from i
+// rather than fract(p): a compiler can round p differently for each, and at a cell's edge they'd then
+// disagree by a whole cell (a one-pixel spike in a ridgeline).
+float noise(vec3 p) {
+    vec3 i = floor(p), f = p - i;
+    vec3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    return mix(
+        mix(mix(CORNER(0.0, 0.0, 0.0), CORNER(1.0, 0.0, 0.0), u.x), mix(CORNER(0.0, 1.0, 0.0), CORNER(1.0, 1.0, 0.0), u.x), u.y),
+        mix(mix(CORNER(0.0, 0.0, 1.0), CORNER(1.0, 0.0, 1.0), u.x), mix(CORNER(0.0, 1.0, 1.0), CORNER(1.0, 1.0, 1.0), u.x), u.y),
+        u.z);
+}
+
+// Finer octaves change only a little faster than coarse ones, so the detail doesn't churn.
+float fbm(vec2 p, float z, int octaves) {
+    float sum = 0.0, amp = 0.5;
+    for (int o = 0; o < octaves; o++) {
+        sum += amp * noise(vec3(p, z));
+        p = p * 2.0 + vec2(17.0, 9.0);
+        z = z * 1.3 + 5.0;
+        amp *= 0.5;
+    }
+    return sum;
+}
+
+vec3 withSaturation(vec3 c) {
+    return mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, saturation);
+}
+`;
+    // For the backgrounds that can be shaped like the cover: the map and the ridgelines.
+    const GL_TERRAIN = `
+uniform float pixel; // canvas pixels per CSS pixel
+// Heights from two covers (brightness, 0 to 1), morphed from one to the other by morph. A weight of 0 means
+// no cover: the noise alone.
+uniform sampler2D cover0;
+uniform sampler2D cover1;
+uniform vec2 weights;
+uniform float morph;
+
+// How much the noise ripples a cover's terrain.
+const float RIPPLE = 0.25;
+
+// Smooth (cubic B-spline) sampling from four bilinear reads, so the terrain has no corners at texels.
+float smoothHeight(sampler2D tex, vec2 uv) {
+    vec2 res = vec2(textureSize(tex, 0));
+    vec2 p = uv * res - 0.5;
+    vec2 f = fract(p);
+    p -= f;
+    vec2 f2 = f * f, f3 = f2 * f;
+    vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+    vec2 w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+    vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+    vec2 w3 = f3 / 6.0;
+    vec2 s0 = w0 + w1;
+    vec2 t0 = (p - 0.5 + w1 / s0) / res;
+    vec2 t1 = (p + 1.5 + w3 / (w2 + w3)) / res;
+    return mix(
+        mix(texture(tex, t1).r, texture(tex, vec2(t0.x, t1.y)).r, s0.x),
+        mix(texture(tex, vec2(t1.x, t0.y)).r, texture(tex, t0).r, s0.x),
+        s0.y);
+}
+
+// The height at uv on the covers, rippled by the noise's height (0 to 1), or the noise's alone where
+// there's no cover.
+float terrainHeight(vec2 uv, float drift) {
+    float ripple = (drift - 0.5) * RIPPLE;
+    return mix(
+        mix(drift, smoothHeight(cover0, uv) + ripple, weights.x),
+        mix(drift, smoothHeight(cover1, uv) + ripple, weights.y),
+        morph);
+}
+`;
+    // A topographic map that slowly reshapes, of random terrain or shaped like the cover.
+    const CONTOUR_FRAGMENT = `${GL_COMMON}${GL_TERRAIN}
+const float LEVELS = 12.0;
+const float SCALE = 1.7; // noise cells per screen height
+const float WARP = 1.6;
+
+void main() {
+    // In screen heights from the centre, so the map looks the same at any window size.
+    float t = time + 512.0;
+    vec2 p = (gl_FragCoord.xy - 0.5 * size) / size.y * SCALE / zoom + vec2(512.0) + vec2(0.4, 0.15) * time;
+    vec2 warp = vec2(fbm(p + vec2(11.0, 3.0), t * 0.7, 2), fbm(p + vec2(7.0, 19.0), t * 0.7, 2));
+    float drift = 0.5 + 0.5 * tanh(fbm(p + warp * WARP, t, 3) * 3.5);
+    // A cover fills the screen the way object-fit: cover would, and zooms in on its middle.
+    vec2 uv = (gl_FragCoord.xy - 0.5 * size) / max(size.x, size.y) / zoom + 0.5;
+    uv.y = 1.0 - uv.y;
+    float level = terrainHeight(uv, drift) * LEVELS;
+    vec3 c = mix(low, high, clamp(floor(level) / LEVELS, 0.0, 1.0));
+    // The contour lines: every whole level, with every fifth one bold. Widths are in CSS pixels.
+    float nearest = floor(level + 0.5);
+    float away = abs(level - nearest) / max(fwidth(level), 1e-5);
+    float bold = abs(mod(nearest, 5.0)) < 0.5 ? 1.0 : 0.0;
+    float halfWidth = max(mix(0.5, 1.0, bold) * pixel, 0.5);
+    c = mix(c, line, (1.0 - smoothstep(halfWidth - 0.5, halfWidth + 0.5, away)) * mix(0.3, 0.6, bold));
+    colour = vec4(withSaturation(c), 1.0);
+}`;
+    // Lines across the screen like a mountain range seen side-on, each hiding the ones behind it. Each line
+    // is a slice through the same terrain, a little further back, so neighbours share their shapes. Shaped
+    // like the cover, each line is a row of it, with its bottom row at the front.
+    const RIDGE_FRAGMENT = `${GL_COMMON}${GL_TERRAIN}
+const int RIDGES = 36;
+const float RISE = 0.32; // the highest peaks at the front, in screen heights
+const float SCALE = 2.2; // noise cells per screen height along the front line
+const float DEPTH = 3.0; // noise cells from the front line to the back
+
+// Where ridge s (0 at the front to 1 at the back) sits: the lines bunch up a little towards the back.
+float base(float s) {
+    return mix(-0.04, 0.88, s * (1.3 - 0.3 * s));
+}
+
+// Ridge s's height at x (screen heights from the centre), 0 to 1.
+float height(float x, float s) {
+    float t = time * 3.0 + 512.0;
+    vec2 p = vec2(x * SCALE * mix(1.0, 1.5, s) / zoom, s * DEPTH - time * 3.0) + vec2(512.0) + vec2(time, 0.0);
+    // Squared, for peaks with flatter ground between them (by multiplying: pow() of a tanh() a hair under
+    // -1 is NaN on some GPUs).
+    float drift = 0.5 + 0.5 * tanh(fbm(p, t, 3) * 3.0);
+    drift *= drift;
+    // The cover fills the width the way object-fit: cover would, and zooms in on its middle.
+    vec2 uv = vec2(x * size.y / max(size.x, size.y), 0.5 - s) / zoom + 0.5;
+    return terrainHeight(uv, drift);
+}
+
+void main() {
+    // In screen heights: x from the centre, y up from the bottom.
+    float x = (gl_FragCoord.x - 0.5 * size.x) / size.y;
+    float y = gl_FragCoord.y / size.y;
+    float px = 1.0 / size.y;
+    // Front to back, each ridge's line and the fill below it over what's behind.
+    vec3 sum = vec3(0.0);
+    float covered = 0.0;
+    for (int i = 0; i < RIDGES; i++) {
+        float s = float(i) / float(RIDGES - 1);
+        float rise = RISE * mix(1.0, 0.6, s);
+        // Too low to reach this pixel.
+        if (base(s) + rise < y - 4.0 * px) continue;
+        float h = base(s) + rise * height(x, s);
+        float slope = (base(s) + rise * height(x + px, s) - h) / px;
+        // Canvas pixels above the line, measured square to it so steep slopes aren't drawn thicker.
+        float away = (y - h) / px / sqrt(1.0 + slope * slope);
+        float halfWidth = max(mix(0.9, 0.5, s) * pixel, 0.5);
+        float stroke = 1.0 - smoothstep(halfWidth - 0.5, halfWidth + 0.5, abs(away));
+        float fill = clamp(0.5 - away, 0.0, 1.0);
+        // Further back is hazier: lighter ground, fainter lines.
+        vec3 ground = mix(low, high, 0.3 * s);
+        vec3 ink = mix(ground, mix(line, high, s), mix(0.85, 0.35, s));
+        sum += (1.0 - covered) * (ink * stroke + ground * max(fill - stroke, 0.0));
+        covered += (1.0 - covered) * max(stroke, fill);
+        if (covered > 0.998) break;
+    }
+    vec3 c = sum + (1.0 - covered) * mix(low, high, 0.35);
+    // Noise of less than one step of 8-bit colour, so the haze doesn't band.
+    c += (float(pcg3d(uvec3(gl_FragCoord.xy, 7u)).x) / 4294967295.0 - 0.5) / 255.0;
+    colour = vec4(withSaturation(c), 1.0);
+}`;
+    // A sand timer for the song: the top drains into the bottom as it plays, and it turns over for the next.
+    const SAND_FRAGMENT = `${GL_COMMON}
+uniform float pixel; // canvas pixels per CSS pixel
+uniform float progress; // how much of the sand has fallen, 0 to 1
+uniform float turn; // how far through turning over, 0 to 1
+uniform float falling; // 1 while the song plays, 0 while it's paused
+const float BULB = 0.38; // the height of each bulb, in screen heights
+const float WIDTH = 0.25; // half a bulb's width at its widest
+const float NECK = 0.005; // half the neck's width
+const float REPOSE = 0.6; // how steeply sand piles up (the tangent of its angle)
+const float GRAIN = 2.0; // CSS pixels
+const float PLATE = 0.018; // the thickness of the plates at each end
+
+// How much of a pixel lies inside an edge d away (positive inside), with d in the same units as aa.
+float edge(float d, float aa) {
+    return clamp(d / aa + 0.5, 0.0, 1.0);
+}
+
+void main() {
+    // In screen heights from the centre, turned with the glass: half a turn, easing in and out.
+    vec2 p = (gl_FragCoord.xy - 0.5 * size) / size.y / zoom;
+    float aa = 1.0 / (size.y * zoom);
+    float a = 3.14159265 * turn * turn * (3.0 - 2.0 * turn);
+    vec2 q = mat2(cos(a), -sin(a), sin(a), cos(a)) * p;
+    // Half the glass's width at this height, and how far inside it this pixel is.
+    float halfWidth = NECK + (WIDTH - NECK) * min(abs(q.y) / BULB, 1.0);
+    float glass = min(halfWidth - abs(q.x), BULB - abs(q.y));
+    // A bulb's area up to height h from its point grows with h squared, so with progress p fallen, the top
+    // is filled to BULB * sqrt(1 - p) above the neck, and the bottom up to the same distance below it.
+    float level = BULB * sqrt(1.0 - progress);
+    // A crater in the top over the neck, and a heap in the bottom under the stream, at the angle of repose.
+    float crater = min(REPOSE * max(NECK + (WIDTH - NECK) * level / BULB - abs(q.x), 0.0) * 0.5, level);
+    float topSand = min(level - crater - q.y, q.y);
+    float heap = min(REPOSE * max(0.12 * sqrt(progress) - abs(q.x), 0.0), BULB - level);
+    float bottomSand = -level + heap - q.y;
+    float sand = max(edge(topSand, aa), edge(bottomSand, aa)) * edge(glass, aa);
+    // The stream, while there's sand to fall and the song plays: grains spaced along it, running down.
+    // About 120 grains a screen height, falling about 0.4 screen heights a second at the standard speed.
+    float run = q.y * 120.0 + time * 4000.0;
+    float grains = step(0.4, float(pcg3d(uvec3(uvec2(floor(run) + 65536.0), 9u)).x) / 4294967295.0) * smoothstep(0.0, 0.3, fract(run));
+    float stream = edge(NECK * 0.7 - abs(q.x), aa) * step(q.y, 0.0) * edge(q.y - (-level + heap), aa)
+        * falling * step(0.001, level) * step(progress, 0.999) * (0.5 + 0.5 * grains);
+    // Grains of slightly different shades.
+    vec2 cell = floor(gl_FragCoord.xy / (GRAIN * pixel));
+    float shade = float(pcg3d(uvec3(uvec2(cell + 65536.0), 5u)).x) / 4294967295.0 - 0.5;
+    vec3 c = mix(low, mix(low, high, 0.12), edge(glass, aa));
+    c = mix(c, high * (1.0 + 0.25 * shade), max(sand, stream));
+    // A light edge on the sand's surfaces and round the glass.
+    float surface = max(1.0 - smoothstep(0.0, 1.5 * aa, abs(topSand)), 1.0 - smoothstep(0.0, 1.5 * aa, abs(bottomSand)));
+    c = mix(c, line, 0.5 * surface * sand);
+    float rim = (1.0 - smoothstep(0.0, max(1.5 * pixel, 1.0) * aa, abs(glass))) * step(abs(q.y), BULB + aa);
+    c = mix(c, line, 0.45 * rim);
+    // A plate across each end, a little wider than the glass.
+    float plate = min(WIDTH + 0.03 - abs(q.x), min(abs(q.y) - BULB, BULB + PLATE - abs(q.y)));
+    c = mix(c, mix(high, line, 0.25), 0.7 * edge(plate, aa));
+    colour = vec4(withSaturation(c), 1.0);
+}`;
+    // Large soft blobs of the art's colours on slow looping paths, over the dark colour. A slow warp keeps
+    // them from looking like circles.
+    const GRADIENT_FRAGMENT = `${GL_COMMON}
+const int BLOBS = 5;
+uniform vec3 blobs[BLOBS];
+// How quickly the blobs move, against the noise.
+const float PACE = 30.0;
+
+void main() {
+    // In screen heights from the centre.
+    vec2 p = (gl_FragCoord.xy - 0.5 * size) / size.y / zoom;
+    float t = time * PACE;
+    vec2 q = p + 0.3 * vec2(fbm(p + vec2(512.0, 517.0), time * 4.0 + 512.0, 2), fbm(p + vec2(531.0, 523.0), time * 4.0 + 540.0, 2));
+    vec3 sum = low * 0.25;
+    float total = 0.25;
+    for (int i = 0; i < BLOBS; i++) {
+        float n = float(i);
+        vec2 centre = vec2(0.75 * sin(t * (0.11 + 0.03 * n) + n * 2.4), 0.42 * cos(t * (0.09 + 0.025 * n) + n * 1.7));
+        vec2 d = q - centre;
+        float w = exp(-dot(d, d) * 5.0);
+        sum += blobs[i] * w;
+        total += w;
+    }
+    vec3 c = sum / total;
+    // Noise of less than one step of 8-bit colour, so the smooth gradients don't band.
+    c += (float(pcg3d(uvec3(gl_FragCoord.xy, 7u)).x) / 4294967295.0 - 0.5) / 255.0;
+    colour = vec4(withSaturation(c), 1.0);
+}`;
+    const GL_GREYS = [[30, 30, 30], [90, 90, 90], [170, 170, 170]];
+    // Lightness ranges for the dark, main and light colours. Art colours keep their hue but are moved into
+    // these: on the map and the ridgelines, so the lines always stand out and the ground stays dark enough
+    // for text; in the gradient, so even its light blobs stay well behind the text.
+    const GL_LIGHTNESS = {
+        contours: [
+            [0.06, 0.16],
+            [0.28, 0.45],
+            [0.72, 0.88],
+        ],
+        sand: [
+            [0.06, 0.14],
+            [0.3, 0.45],
+            [0.7, 0.85],
+        ],
+        ridges: [
+            [0.06, 0.16],
+            [0.28, 0.45],
+            [0.7, 0.85],
+        ],
+        gradient: [
+            [0.04, 0.12],
+            [0.25, 0.4],
+            [0.5, 0.65],
+        ],
+    };
+    // For the cover's own hues in the gradient, which averaging over the cover tends to leave muddy.
+    const BLOB_LIGHTNESS = [0.38, 0.6];
+    const BLOB_SATURATION = 0.5;
+    // The gradient's five blobs from the dark, main and light colours: mostly the main, one light, one dark.
+    const shadeBlobs = ([low, high, line]) => [high, line, high, low, line];
+
+    // { gl, programs: { contours, gradient } }, each program { program, uniforms }; null once WebGL has failed,
+    // undefined before it's been tried.
+    let glState;
+    let glFrame = 0;
+    let glLast = 0;
+    // Each opening of Spotify starts somewhere else in the noise.
+    let glTime = Math.random() * 100;
+    // The dark, main and light colours, then the gradient's five blobs, faded from `from` to `to` when the
+    // song changes.
+    const GL_GREY_COLORS = [...GL_GREYS, ...shadeBlobs(GL_GREYS)];
+    let glColors = { from: GL_GREY_COLORS, to: GL_GREY_COLORS, start: 0 };
+    let glColorToken = 0;
+
+    // A cover's terrain: its brightness, blurred, on a small square.
+    const TERRAIN_SIZE = 96;
+    const TERRAIN_BLUR = 2.5;
+    const TERRAIN_MORPH_MS = 1500;
+    // Two slots of heights (null for the noise alone), morphing to `front`. Kept here as well as on the GPU,
+    // so they can be uploaded again after a lost context.
+    let terrain = { heights: [null, null], urls: ["", ""], front: 0, start: 0 };
+    let uploadedHeights = [null, null];
+    let terrainToken = 0;
+
+    // The sand timer: how much has fallen (null until it's first drawn), easing towards the song's progress,
+    // and when it began turning over for a new song (null when it isn't).
+    const SAND_EASE_MS = 250;
+    const SAND_TURN_MS = 1200;
+    let sand = { fallen: null, uri: "", turning: null };
+
+    function songProgress() {
+        const duration = Player.getDuration?.() || 0;
+        return duration ? Math.min(Math.max((Player.getProgress?.() || 0) / duration, 0), 1) : 0;
+    }
+
+    // Moves the sand on to `now`, `dt` ms after the last frame. Without motion, it's always where the song is.
+    function stepSand(now, dt, moving) {
+        const target = songProgress();
+        const uri = currentTrack?.uri ?? "";
+        if (sand.fallen === null) sand = { fallen: target, uri, turning: null };
+        // A new song turns the glass over, so what had fallen is on top again.
+        if (uri !== sand.uri) {
+            sand.uri = uri;
+            if (moving) sand.turning = now;
+        }
+        if (sand.turning !== null && now - sand.turning >= SAND_TURN_MS) {
+            sand.fallen = 1 - sand.fallen;
+            sand.turning = null;
+        }
+        // After a seek or a turn, the sand runs quickly to where the song is.
+        if (sand.turning === null) {
+            sand.fallen = moving ? sand.fallen + (target - sand.fallen) * (1 - Math.exp(-dt / SAND_EASE_MS)) : target;
+            if (Math.abs(target - sand.fallen) < 1e-4) sand.fallen = target;
+        }
+    }
+
+    function setupGl() {
+        if (glState !== undefined) return glState;
+        glState = null;
+        const gl = glCanvas.getContext("webgl2", { alpha: false, antialias: false, depth: false, powerPreference: "low-power" });
+        if (!gl) return null;
+        const build = (fragment) => {
+            const program = gl.createProgram();
+            for (const [type, source] of [
+                [gl.VERTEX_SHADER, GL_VERTEX],
+                [gl.FRAGMENT_SHADER, fragment],
+            ]) {
+                const shader = gl.createShader(type);
+                gl.shaderSource(shader, source);
+                gl.compileShader(shader);
+                gl.attachShader(program, shader);
+            }
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return null;
+            // A uniform a shader doesn't have gets a null location, which WebGL ignores.
+            const names = ["size", "pixel", "time", "zoom", "saturation", "low", "high", "line", "blobs", "weights", "morph", "progress", "turn", "falling"];
+            return { program, uniforms: Object.fromEntries(names.map((name) => [name, gl.getUniformLocation(program, name)])) };
+        };
+        const programs = {
+            contours: build(CONTOUR_FRAGMENT),
+            ridges: build(RIDGE_FRAGMENT),
+            gradient: build(GRADIENT_FRAGMENT),
+            sand: build(SAND_FRAGMENT),
+        };
+        if (Object.values(programs).includes(null)) return null;
+        // A texture per terrain slot, black until a cover arrives (an empty one would warn on every frame).
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+        for (const unit of [0, 1]) {
+            gl.activeTexture(gl.TEXTURE0 + unit);
+            gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, 1, 1, 0, gl.RED, gl.UNSIGNED_BYTE, new Uint8Array(1));
+        }
+        for (const name of TERRAIN_BACKGROUNDS) {
+            const { program } = programs[name];
+            gl.useProgram(program);
+            for (const unit of [0, 1]) gl.uniform1i(gl.getUniformLocation(program, `cover${unit}`), unit);
+        }
+        uploadedHeights = [null, null];
+        glState = { gl, programs };
+        return glState;
+    }
+
+    // The GPU can drop the context (a driver update, sleep). It's set up again when it comes back.
+    glCanvas.addEventListener("webglcontextlost", (event) => {
+        event.preventDefault();
+        cancelAnimationFrame(glFrame);
+        glFrame = 0;
+        glState = undefined;
+    });
+    glCanvas.addEventListener("webglcontextrestored", () => {
+        glState = undefined;
+        syncGl();
+    });
+
+    // Draws while a shader background is on screen. It moves unless reduced motion is asked for, and draws
+    // a frame for any change (settings, colours) either way.
+    function syncGl() {
+        const on = isOpen && GL_BACKGROUNDS.includes(settings.background) && !document.hidden;
+        if (on) setupGl();
+        host.classList.toggle("fsa-no-gl", glState === null);
+        if (on && glState && !glFrame) {
+            // As if a frame was just due, so this one isn't skipped.
+            glLast = performance.now() - 1000 / GL_FPS;
+            glFrame = requestAnimationFrame(drawGl);
+        } else if (!on) {
+            cancelAnimationFrame(glFrame);
+            glFrame = 0;
+            sand.fallen = null;
+        }
+    }
+
+    function drawGl(now) {
+        const moving = !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+        // A frame's time can be a little before the colours or terrain were set.
+        const fade = Math.min(1, Math.max(0, (now - glColors.start) / FADE_MS));
+        const morph = Math.min(1, Math.max(0, (now - terrain.start) / TERRAIN_MORPH_MS));
+        // Skip frames over the rate (a 144Hz screen would otherwise draw at 144Hz).
+        if (moving && now - glLast < 1000 / GL_FPS - 4) {
+            glFrame = requestAnimationFrame(drawGl);
+            return;
+        }
+        // Capped, so coming back from a long gap doesn't jump.
+        const dt = Math.min(now - glLast, 100);
+        if (moving) glTime += (dt / 1000) * GL_RATE * settings.bgSpeed;
+        glLast = now;
+        if (settings.background === "sand") stepSand(now, dt, moving);
+        else sand.fallen = null;
+        const { gl, programs } = glState;
+        const { program, uniforms } = programs[settings.background];
+        gl.useProgram(program);
+        const scale = Math.min(1, GL_MAX_PX[settings.background] / Math.max(glCanvas.clientWidth, glCanvas.clientHeight, 1));
+        const width = Math.max(1, Math.round(glCanvas.clientWidth * scale));
+        const height = Math.max(1, Math.round(glCanvas.clientHeight * scale));
+        if (glCanvas.width !== width || glCanvas.height !== height) {
+            glCanvas.width = width;
+            glCanvas.height = height;
+            gl.viewport(0, 0, width, height);
+        }
+        gl.uniform2f(uniforms.size, width, height);
+        gl.uniform1f(uniforms.pixel, scale);
+        gl.uniform1f(uniforms.time, glTime);
+        gl.uniform1f(uniforms.zoom, settings.bgZoom);
+        gl.uniform1f(uniforms.saturation, settings.bgColor);
+        const colors = glColors.to.map((to, index) => glColors.from[index].map((v, k) => (v + (to[k] - v) * fade) / 255));
+        ["low", "high", "line"].forEach((name, index) => gl.uniform3f(uniforms[name], ...colors[index]));
+        gl.uniform3fv(uniforms.blobs, colors.slice(3).flat());
+        terrain.heights.forEach((heights, unit) => {
+            if (!heights || heights === uploadedHeights[unit]) return;
+            gl.activeTexture(gl.TEXTURE0 + unit);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, TERRAIN_SIZE, TERRAIN_SIZE, 0, gl.RED, gl.UNSIGNED_BYTE, heights);
+            uploadedHeights[unit] = heights;
+        });
+        gl.uniform2f(uniforms.weights, terrain.heights[0] ? 1 : 0, terrain.heights[1] ? 1 : 0);
+        gl.uniform1f(uniforms.morph, terrain.front === 1 ? morph : 1 - morph);
+        gl.uniform1f(uniforms.progress, sand.fallen ?? 0);
+        gl.uniform1f(uniforms.turn, sand.turning === null ? 0 : (now - sand.turning) / SAND_TURN_MS);
+        gl.uniform1f(uniforms.falling, sand.turning === null && Player.data?.isPaused === false ? 1 : 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        glFrame = moving || fade < 1 || morph < 1 ? requestAnimationFrame(drawGl) : 0;
+    }
+
+    // What the terrain and the gradient take from the cover's pixels: { heights, hues }, or null when it
+    // can't be read. Each cover is read once for both.
+    const coverReads = new Map();
+
+    function readCover(url) {
+        if (!coverReads.has(url)) remember(coverReads, url, readCoverPixels(url));
+        return coverReads.get(url);
+    }
+
+    // This copy of the art is requested with CORS, which Spotify's image server allows, so its pixels can
+    // be read. It's blurred, which suits both the terrain and the colours.
+    async function readCoverPixels(url) {
+        const img = document.createElement("img");
+        img.crossOrigin = "anonymous";
+        if (!(await loadInto(img, url))) return null;
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = TERRAIN_SIZE;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        // Over-drawn so the blur doesn't pull in transparency from outside, as in paintBlur.
+        const pad = TERRAIN_BLUR * 2;
+        ctx.filter = `blur(${TERRAIN_BLUR}px)`;
+        ctx.drawImage(img, -pad, -pad, TERRAIN_SIZE + pad * 2, TERRAIN_SIZE + pad * 2);
+        let pixels;
+        try {
+            pixels = ctx.getImageData(0, 0, TERRAIN_SIZE, TERRAIN_SIZE).data;
+        } catch {
+            return null;
+        }
+        return { heights: coverHeights(pixels), hues: coverHues(pixels) };
+    }
+
+    // The cover's brightness, stretched to use the whole range (0 to 255), or null when it's too plain to
+    // have any shape.
+    function coverHeights(pixels) {
+        const brightness = new Float32Array(TERRAIN_SIZE * TERRAIN_SIZE);
+        for (let i = 0; i < brightness.length; i++) {
+            brightness[i] = 0.2126 * pixels[i * 4] + 0.7152 * pixels[i * 4 + 1] + 0.0722 * pixels[i * 4 + 2];
+        }
+        // The darkest and lightest 2% are left out, so a few specks don't set the range.
+        const sorted = brightness.slice().sort();
+        const lo = sorted[Math.floor(sorted.length * 0.02)];
+        const hi = sorted[Math.floor(sorted.length * 0.98)];
+        if (hi - lo < 12) return null;
+        return Uint8Array.from(brightness, (v) => Math.min(255, Math.max(0, ((v - lo) / (hi - lo)) * 255)));
+    }
+
+    // Up to four clearly different hues that each cover a fair share of the cover, most first, as the
+    // average colour of their pixels; [] for a cover with no colour to speak of.
+    function coverHues(pixels) {
+        const BINS = 12;
+        const bins = Array.from({ length: BINS }, () => ({ weight: 0, rgb: [0, 0, 0] }));
+        let total = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+            const rgb = [pixels[i], pixels[i + 1], pixels[i + 2]];
+            const [h, s, l] = toHsl(rgb);
+            // Greys, near-black and near-white have no hue worth showing.
+            if (s < 0.25 || l < 0.12 || l > 0.9) continue;
+            // Vivid pixels count for more than washed-out ones.
+            const weight = s * (1 - Math.abs(2 * l - 1));
+            const bin = bins[Math.floor((h / 6) * BINS) % BINS];
+            bin.weight += weight;
+            rgb.forEach((v, k) => (bin.rgb[k] += v * weight));
+            total += weight;
+        }
+        const picked = [];
+        for (const index of [...bins.keys()].sort((a, b) => bins[b].weight - bins[a].weight)) {
+            if (picked.length === 4 || !total || bins[index].weight < total * 0.08) break;
+            // Neighbouring bins are too alike to tell apart behind the blur.
+            const near = (other) => Math.min(Math.abs(other - index), BINS - Math.abs(other - index)) < 2;
+            if (!picked.some(near)) picked.push(index);
+        }
+        return picked.map((index) => bins[index].rgb.map((v) => Math.round(v / bins[index].weight)));
+    }
+
+    // Morphs to the playing cover's terrain, or to the noise alone.
+    async function loadTerrain(track) {
+        const url = settings.bgTerrain === "cover" ? track.bgImage : "";
+        if (url === terrain.urls[terrain.front]) return;
+        const token = ++terrainToken;
+        const heights = url ? ((await readCover(url))?.heights ?? null) : null;
+        if (token !== terrainToken) return;
+        const back = 1 - terrain.front;
+        terrain = {
+            heights: terrain.heights.map((old, slot) => (slot === back ? heights : old)),
+            urls: terrain.urls.map((old, slot) => (slot === back ? url : old)),
+            front: back,
+            start: performance.now(),
+        };
+        syncGl();
+    }
+
+    async function loadGlColors(track) {
+        const token = ++glColorToken;
+        const gradient = settings.background === "gradient";
+        const [colors, cover] = await Promise.all([artColors(track), gradient && track.bgImage ? readCover(track.bgImage) : null]);
+        if (token !== glColorToken || !GL_BACKGROUNDS.includes(settings.background)) return;
+        const main = pickColor(colors, ["VIBRANT_NON_ALARMING", "VIBRANT", "PROMINENT", "DESATURATED"]);
+        let shades = GL_GREYS;
+        if (main) {
+            const rgb = rgbOf(main);
+            const low = pickColor(colors, ["DARK_VIBRANT"]);
+            const line = pickColor(colors, ["LIGHT_VIBRANT"]);
+            shades = [low ? rgbOf(low) : rgb, rgb, line ? rgbOf(line) : rgb].map((color, index) =>
+                withLightness(color, GL_LIGHTNESS[settings.background][index])
+            );
+        }
+        // Spotify's colours are shades of one hue, so the gradient takes the cover's own hues when it has
+        // two or more, keeping one dark blob for depth.
+        const hues = cover?.hues ?? [];
+        let blobs = shadeBlobs(shades);
+        if (hues.length > 1) {
+            blobs = [0, 1, 2, 3].map((index) => withLightness(hues[index % hues.length], BLOB_LIGHTNESS, BLOB_SATURATION));
+            blobs.splice(3, 0, shades[0]);
+        }
+        const to = [...shades, ...blobs];
+        if (to.join() === glColors.to.join()) return;
+        // From wherever a fade in progress has got to.
+        const now = performance.now();
+        const fade = Math.min(1, (now - glColors.start) / FADE_MS);
+        const from = glColors.from.map((rgb, index) => rgb.map((v, k) => v + (glColors.to[index][k] - v) * fade));
+        glColors = { from, to, start: now };
+        syncGl();
     }
 
     // { uri, status: "loading" | "ready" | "none", synced, lines: [{ start, text }] }
@@ -1653,7 +2357,7 @@
     async function fetchLyrics(track) {
         const id = track.uri.split(":")[2];
         const url = `https://spclient.wg.spotify.com/color-lyrics/v2/track/${id}/image/${encodeURIComponent(
-            track.lyricsImage
+            track.imageUri
         )}?format=json&vocalRemoval=false&market=from_token`;
         const res = await Spicetify.CosmosAsync.get(url, null, { "app-platform": "WebPlayer" });
         const lines = (res?.lyrics?.lines ?? [])
@@ -1863,6 +2567,8 @@
     function tick() {
         stopTick();
         if (!isOpen || document.hidden) return;
+        // Without motion, the sand timer is drawn only when asked, so once a second as the song plays.
+        if (settings.background === "sand") syncGl();
         const duration = Player.getDuration?.() || 0;
         const position = Math.min(Player.getProgress?.() || 0, duration);
         if (!duration || Player.data?.isPaused !== false) {
@@ -2361,7 +3067,7 @@
     }
 
     function resetBackground() {
-        updateSettings(Object.fromEntries(["bgMotion", ...Object.keys(SLIDERS)].map((key) => [key, DEFAULTS[key]])));
+        updateSettings(Object.fromEntries(["bgMotion", "bgTerrain", ...Object.keys(SLIDERS)].map((key) => [key, DEFAULTS[key]])));
     }
 
     function SettingToggle({ name, label }) {
@@ -2431,6 +3137,9 @@
             );
         };
         const art = settings.background === "art";
+        // The contour map and gradient.
+        const shader = GL_BACKGROUNDS.includes(settings.background);
+        const dimmed = art || shader || settings.background === "artist";
         return h(
             "div",
             { className: "fsa-settings", role: "dialog", "aria-label": "Full Screen Plus settings" },
@@ -2444,12 +3153,13 @@
                 select("layout", "Layout"),
                 select("background", "Background"),
                 art && select("bgMotion", "Motion"),
-                art && settings.bgMotion !== "still" && slider("bgSpeed"),
-                art && slider("bgZoom"),
+                TERRAIN_BACKGROUNDS.includes(settings.background) && select("bgTerrain", "Terrain"),
+                ((art && settings.bgMotion !== "still") || shader) && slider("bgSpeed"),
+                (art || shader) && slider("bgZoom"),
                 art && slider("bgBlur"),
-                art && slider("bgColor"),
-                (art || settings.background === "artist") && slider("bgDim"),
-                (art || settings.background === "artist") &&
+                (art || shader) && slider("bgColor"),
+                dimmed && slider("bgDim"),
+                dimmed &&
                     h(
                         "div",
                         { className: "fsa-settings-row", key: "reset" },
@@ -2761,6 +3471,7 @@
 
     function onVisibilityChange() {
         host.classList.toggle("fsa-paused", document.hidden);
+        syncGl();
         if (document.hidden) {
             stopTick();
             clearTimeout(lyricsTimer);
@@ -2847,6 +3558,7 @@
         document.removeEventListener("keydown", onKeyDown, true);
         document.removeEventListener("fullscreenchange", onFullscreenChange);
         document.removeEventListener("visibilitychange", onVisibilityChange);
+        syncGl();
         stopTick();
         clearTimeout(lyricsTimer);
         lyricsTimer = 0;
