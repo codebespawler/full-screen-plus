@@ -44,6 +44,9 @@
         like: `<path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8"/><path d="M11.75 8a.75.75 0 0 1-.75.75H8.75V11a.75.75 0 0 1-1.5 0V8.75H5a.75.75 0 0 1 0-1.5h2.25V5a.75.75 0 0 1 1.5 0v2.25H11a.75.75 0 0 1 .75.75"/>`,
         liked: `<path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8m11.748-1.97a.75.75 0 0 0-1.06-1.06l-4.47 4.47-1.405-1.406a.75.75 0 1 0-1.061 1.06l2.466 2.467 5.53-5.53z"/>`,
         lyrics: `<path d="M4 4a4 4 0 1 1 8 0v3a4 4 0 0 1-8 0zm4-2.5A2.5 2.5 0 0 0 5.5 4v3a2.5 2.5 0 0 0 5 0V4A2.5 2.5 0 0 0 8 1.5"/><path d="M2.25 6v1a5.75 5.75 0 0 0 11.5 0V6h1.5v1a7.25 7.25 0 0 1-6.5 7.212V16h-1.5v-1.788A7.25 7.25 0 0 1 .75 7V6z"/>`,
+        song: `<path d="M4 1h11v11.75A2.75 2.75 0 1 1 12.25 10h1.25V2.5h-8v10.25A2.75 2.75 0 1 1 2.75 10H4zm0 10.5H2.75A1.25 1.25 0 1 0 4 12.75zm9.5 0h-1.25a1.25 1.25 0 1 0 1.25 1.25z"/>`,
+        artist: `<path d="M11.757 2.987A4.36 4.36 0 0 0 7.618 0a4.36 4.36 0 0 0-4.139 2.987 5.5 5.5 0 0 0-.22 1.894 5.6 5.6 0 0 0 1.4 3.312l.125.152a.748.748 0 0 1-.2 1.128l-2.209 1.275A4.75 4.75 0 0 0 0 14.857v1.142h8.734A5.5 5.5 0 0 1 8.15 14.5H1.517a3.25 3.25 0 0 1 1.6-2.454l2.21-1.275a2.25 2.25 0 0 0 .6-3.386l-.128-.153a4.1 4.1 0 0 1-1.05-2.44A4 4 0 0 1 4.89 3.47a2.8 2.8 0 0 1 1.555-1.713 2.89 2.89 0 0 1 3.293.691c.265.296.466.644.589 1.022.12.43.169.876.144 1.322a4.12 4.12 0 0 1-1.052 2.44l-.127.153a2.24 2.24 0 0 0-.2 2.58c.338-.45.742-.845 1.2-1.173 0-.162.055-.32.156-.447l.126-.152a5.6 5.6 0 0 0 1.4-3.312 5.5 5.5 0 0 0-.218-1.894zm3.493 3.771a.75.75 0 0 0-.75.75v3.496h-1a2.5 2.5 0 0 0-2.31 1.542 2.497 2.497 0 0 0 1.822 3.406A2.502 2.502 0 0 0 16 13.502V7.508a.75.75 0 0 0-.75-.75m-.75 6.744a.998.998 0 0 1-1.707.707 1 1 0 0 1 .707-1.706h1z"/>`,
+        album: `<path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8"/><path d="M8 6.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M5 8a3 3 0 1 1 6 0 3 3 0 0 1-6 0"/>`,
         volumeHigh: `<path d="M9.741.85a.75.75 0 0 1 .375.65v13a.75.75 0 0 1-1.125.65l-6.925-4a3.64 3.64 0 0 1-1.33-4.967 3.64 3.64 0 0 1 1.33-1.332l6.925-4a.75.75 0 0 1 .75 0zm-6.924 5.3a2.14 2.14 0 0 0 0 3.7l5.8 3.35V2.8zm8.683 4.29V5.56a2.75 2.75 0 0 1 0 4.88"/><path d="M11.5 13.614a5.752 5.752 0 0 0 0-11.228v1.55a4.252 4.252 0 0 1 0 8.127z"/>`,
         volumeMid: `<path d="M9.741.85a.75.75 0 0 1 .375.65v13a.75.75 0 0 1-1.125.65l-6.925-4a3.64 3.64 0 0 1-1.33-4.967 3.64 3.64 0 0 1 1.33-1.332l6.925-4a.75.75 0 0 1 .75 0zm-6.924 5.3a2.14 2.14 0 0 0 0 3.7l5.8 3.35V2.8zm8.683 6.087a4.502 4.502 0 0 0 0-8.474v1.65a3 3 0 0 1 0 5.175z"/>`,
         volumeLow: `<path d="M9.741.85a.75.75 0 0 1 .375.65v13a.75.75 0 0 1-1.125.65l-6.925-4a3.64 3.64 0 0 1-1.33-4.967 3.64 3.64 0 0 1 1.33-1.332l6.925-4a.75.75 0 0 1 .75 0zm-6.924 5.3a2.14 2.14 0 0 0 0 3.7l5.8 3.35V2.8zm8.683 4.29V5.56a2.75 2.75 0 0 1 0 4.88"/>`,
@@ -130,6 +133,11 @@
             ["12hDate", "12-hour with date"],
             ["24hDate", "24-hour with date"],
         ],
+        infoIcons: [
+            ["off", "Off"],
+            ["always", "Always"],
+            ["hover", "On hover"],
+        ],
     };
 
     // Background sliders. Each is a multiplier where 1 is the standard look: animation speed, layer size,
@@ -167,6 +175,7 @@
         context: "always",
         upNext: "end",
         album: true,
+        infoIcons: "off",
         progress: true,
         extraControls: true,
         volume: false,
@@ -605,6 +614,30 @@
 .fsa-artists:empty,
 .fsa-album:empty {
     display: none;
+}
+/* Sized to each line's text. On hover they keep their space, so the text doesn't move when they appear. */
+.fsa-info-icon {
+    display: inline-block;
+    width: 0.85em;
+    height: 0.85em;
+    margin-right: 0.35em;
+    vertical-align: -0.12em;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+.fsa-title .fsa-info-icon {
+    width: 0.55em;
+    height: 0.55em;
+    margin-right: 0.25em;
+}
+.fsa-info-icon svg {
+    display: block;
+}
+#fsa-root.fsa-icons-hover .fsa-info-icon {
+    opacity: 0;
+}
+#fsa-root.fsa-icons-hover .fsa-panel:hover .fsa-info-icon {
+    opacity: 0.7;
 }
 .fsa-link {
     color: inherit;
@@ -1361,6 +1394,7 @@
         host.classList.toggle("fsa-lyrics-on", !!lyricsOn);
         host.classList.toggle("fsa-settings-open", settingsOpen);
         host.classList.toggle("fsa-clock-on", settings.clock !== "off");
+        host.classList.toggle("fsa-icons-hover", settings.infoIcons === "hover");
     }
 
     // The background's animations are made by CSS whenever they start (opening, changing motion),
@@ -2197,8 +2231,14 @@
         );
     }
 
+    // Songs only: an episode's "artist" is its show, which an artist icon would misdescribe.
+    function InfoIcon({ name }) {
+        return h("span", { className: "fsa-info-icon", "aria-hidden": "true", dangerouslySetInnerHTML: { __html: svg(ICONS[name]) } });
+    }
+
     function Details(view) {
         const { track, settings: s } = view;
+        const icon = (name) => s.infoIcons !== "off" && track?.isTrack && h(InfoIcon, { name });
         // Each artist links to their page; names read from metadata alone stay plain.
         const artists = track?.artistLinks?.length
             ? track.artistLinks.flatMap((artist, i) => [i > 0 && ", ", h(Link, { key: i, uri: artist.uri }, artist.name)])
@@ -2210,10 +2250,18 @@
                 "div",
                 { className: "fsa-title" },
                 // A song's title opens its album, as in Spotify's own player; an episode opens itself.
+                track && icon("song"),
                 track ? h(Link, { uri: track.isTrack ? track.albumUri : track.uri }, track.title) : "Nothing playing"
             ),
-            h("div", { className: "fsa-artists" }, artists),
-            h("div", { className: "fsa-album" }, s.album && track?.album ? h(Link, { uri: track.albumUri }, track.album) : null),
+            // Icons only beside text, so an empty line still collapses.
+            h("div", { className: "fsa-artists" }, artists?.length ? h(React.Fragment, null, icon("artist"), artists) : null),
+            h(
+                "div",
+                { className: "fsa-album" },
+                s.album && track?.album
+                    ? h(React.Fragment, null, icon("album"), h(Link, { uri: track.albumUri }, track.album))
+                    : null
+            ),
             s.progress &&
                 h(
                     "div",
@@ -2416,6 +2464,7 @@
                 select("context", "Playing from"),
                 select("upNext", "Up next"),
                 toggle("album", "Album name"),
+                select("infoIcons", "Icons by the song, artist and album"),
                 toggle("progress", "Progress bar"),
                 toggle("extraControls", "Like, shuffle, repeat and lyrics buttons"),
                 toggle("volume", "Volume slider"),

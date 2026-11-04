@@ -12,6 +12,7 @@ A full-screen "now playing" view for [Spicetify](https://spicetify.app): big cov
 - **Up next** and **Playing from**, so you can see what's coming and where it's playing from
 - **Controls:** like, shuffle and repeat, with an optional volume slider. Scroll the mouse wheel anywhere to change the volume.
 - **Clickable links:** the song, artists, album and playlist each open their page in Spotify
+- **Icons:** optional song, artist and album icons beside the details, shown always or only on hover
 - **Clock:** optional, in 12- or 24-hour format, with or without the date
 - **Gets out of the way:** the cursor and controls hide when the mouse stops moving
 
