@@ -39,6 +39,8 @@ The contour map and ridgelines take their shape from the cover, so each album ge
 
 All of them move slowly, unless your system asks for reduced motion. They need WebGL, and fall back to the blurred art without it.
 
+Your graphics card draws them the whole time they're on screen, so on a laptop they use more battery than the blurred art. The ridgelines and the contour map are the heaviest. If they stutter or your fan gets loud, choose another background, or turn on reduced motion so they only redraw when something changes.
+
 ## Install
 
 1. Download [`full-screen-plus.js`](full-screen-plus.js).

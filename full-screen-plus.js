@@ -1841,17 +1841,36 @@ float terrainHeight(vec2 uv, float drift) {
 }
 `;
     // A topographic map that slowly reshapes, of random terrain or shaped like the cover.
-    const CONTOUR_FRAGMENT = `${GL_COMMON}${GL_TERRAIN}
+    //
+    // The noise is smooth over many pixels, so a first pass draws it at 1/GL_CONTOUR_STEP the canvas's size,
+    // and the map filters it back up. The lines are still drawn at full size.
+    const GL_CONTOUR_STEP = 3;
+    const GL_CONTOUR = `
 const float LEVELS = 12.0;
 const float SCALE = 1.7; // noise cells per screen height
 const float WARP = 1.6;
+const float STEP = ${GL_CONTOUR_STEP}.0; // canvas pixels per texel of the noise
+`;
+    // The noise's height, 0 to 1, kept to 16 bits in the red and green channels.
+    const CONTOUR_NOISE_FRAGMENT = `${GL_COMMON}${GL_CONTOUR}
+void main() {
+    // The canvas pixel this texel stands for, in screen heights from the centre, so the map looks the same
+    // at any window size.
+    vec2 q = (gl_FragCoord.xy - 0.5) * STEP + 0.5;
+    float t = time + 512.0;
+    vec2 p = (q - 0.5 * size) / size.y * SCALE / zoom + vec2(512.0) + vec2(0.4, 0.15) * time;
+    vec2 warp = vec2(fbm(p + vec2(11.0, 3.0), t * 0.7, 2), fbm(p + vec2(7.0, 19.0), t * 0.7, 2));
+    float v = (0.5 + 0.5 * tanh(fbm(p + warp * WARP, t, 3) * 3.5)) * 255.0;
+    float top = floor(v);
+    colour = vec4(top / 255.0, v - top, 0.0, 1.0);
+}`;
+    const CONTOUR_FRAGMENT = `${GL_COMMON}${GL_TERRAIN}${GL_CONTOUR}
+uniform sampler2D field;
 
 void main() {
-    // In screen heights from the centre, so the map looks the same at any window size.
-    float t = time + 512.0;
-    vec2 p = (gl_FragCoord.xy - 0.5 * size) / size.y * SCALE / zoom + vec2(512.0) + vec2(0.4, 0.15) * time;
-    vec2 warp = vec2(fbm(p + vec2(11.0, 3.0), t * 0.7, 2), fbm(p + vec2(7.0, 19.0), t * 0.7, 2));
-    float drift = 0.5 + 0.5 * tanh(fbm(p + warp * WARP, t, 3) * 3.5);
+    // The two channels are a sum, so filtering them and then adding is the same as filtering the noise.
+    vec2 pair = texture(field, ((gl_FragCoord.xy - 0.5) / STEP + 0.5) / vec2(textureSize(field, 0))).rg;
+    float drift = pair.r + pair.g / 255.0;
     // A cover fills the screen the way object-fit: cover would, and zooms in on its middle.
     vec2 uv = (gl_FragCoord.xy - 0.5 * size) / max(size.x, size.y) / zoom + 0.5;
     uv.y = 1.0 - uv.y;
@@ -1868,8 +1887,12 @@ void main() {
     // Lines across the screen like a mountain range seen side-on, each hiding the ones behind it. Each line
     // is a slice through the same terrain, a little further back, so neighbours share their shapes. Shaped
     // like the cover, each line is a row of it, with its bottom row at the front.
-    const RIDGE_FRAGMENT = `${GL_COMMON}${GL_TERRAIN}
-const int RIDGES = 36;
+    //
+    // A ridge's height depends only on x, so it's worked out once per column in a first pass, into a texture
+    // with a row per ridge, and the lines read it from there. Worked out for every pixel, it was far too slow.
+    const GL_RIDGES = 36;
+    const GL_RIDGE = `
+const int RIDGES = ${GL_RIDGES};
 const float RISE = 0.32; // the highest peaks at the front, in screen heights
 const float SCALE = 2.2; // noise cells per screen height along the front line
 const float DEPTH = 3.0; // noise cells from the front line to the back
@@ -1878,7 +1901,10 @@ const float DEPTH = 3.0; // noise cells from the front line to the back
 float base(float s) {
     return mix(-0.04, 0.88, s * (1.3 - 0.3 * s));
 }
-
+`;
+    // The first pass: a row per ridge, a column per canvas column. The height is kept to 16 bits, in the red
+    // and green channels.
+    const RIDGE_HEIGHT_FRAGMENT = `${GL_COMMON}${GL_TERRAIN}${GL_RIDGE}
 // Ridge s's height at x (screen heights from the centre), 0 to 1.
 float height(float x, float s) {
     float t = time * 3.0 + 512.0;
@@ -1893,8 +1919,26 @@ float height(float x, float s) {
 }
 
 void main() {
-    // In screen heights: x from the centre, y up from the bottom.
     float x = (gl_FragCoord.x - 0.5 * size.x) / size.y;
+    float s = floor(gl_FragCoord.y) / float(RIDGES - 1);
+    // The ripple can take a height a little past 0 or 1, so -0.5 to 1.5 is kept.
+    float v = clamp((height(x, s) + 0.5) / 2.0, 0.0, 1.0) * 255.0;
+    float top = floor(v);
+    colour = vec4(top / 255.0, v - top, 0.0, 1.0);
+}`;
+    const RIDGE_FRAGMENT = `${GL_COMMON}${GL_RIDGE}
+uniform float pixel; // canvas pixels per CSS pixel
+uniform highp sampler2D heights;
+
+// Ridge i's height in a canvas column, 0 to 1. Columns past the edges take the edge's.
+float height(int column, int i) {
+    vec2 pair = texelFetch(heights, ivec2(clamp(column, 0, int(size.x) - 1), i), 0).rg;
+    return (pair.r + pair.g / 255.0) * 2.0 - 0.5;
+}
+
+void main() {
+    // In screen heights, up from the bottom.
+    int column = int(gl_FragCoord.x);
     float y = gl_FragCoord.y / size.y;
     float px = 1.0 / size.y;
     // Front to back, each ridge's line and the fill below it over what's behind.
@@ -1905,8 +1949,8 @@ void main() {
         float rise = RISE * mix(1.0, 0.6, s);
         // Too low to reach this pixel.
         if (base(s) + rise < y - 4.0 * px) continue;
-        float h = base(s) + rise * height(x, s);
-        float slope = (base(s) + rise * height(x + px, s) - h) / px;
+        float h = base(s) + rise * height(column, i);
+        float slope = rise * (height(column + 1, i) - height(column - 1, i)) / (2.0 * px);
         // Canvas pixels above the line, measured square to it so steep slopes aren't drawn thicker.
         float away = (y - h) / px / sqrt(1.0 + slope * slope);
         float halfWidth = max(mix(0.9, 0.5, s) * pixel, 0.5);
@@ -2119,30 +2163,53 @@ void main() {
             return { program, uniforms: Object.fromEntries(names.map((name) => [name, gl.getUniformLocation(program, name)])) };
         };
         const programs = {
+            contourNoise: build(CONTOUR_NOISE_FRAGMENT),
             contours: build(CONTOUR_FRAGMENT),
+            ridgeHeights: build(RIDGE_HEIGHT_FRAGMENT),
             ridges: build(RIDGE_FRAGMENT),
             gradient: build(GRADIENT_FRAGMENT),
             sand: build(SAND_FRAGMENT),
         };
         if (Object.values(programs).includes(null)) return null;
+        const texture = (unit, filter) => {
+            const created = gl.createTexture();
+            gl.activeTexture(gl.TEXTURE0 + unit);
+            gl.bindTexture(gl.TEXTURE_2D, created);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            return created;
+        };
         // A texture per terrain slot, black until a cover arrives (an empty one would warn on every frame).
         gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
         for (const unit of [0, 1]) {
-            gl.activeTexture(gl.TEXTURE0 + unit);
-            gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            texture(unit, gl.LINEAR);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, 1, 1, 0, gl.RED, gl.UNSIGNED_BYTE, new Uint8Array(1));
         }
-        for (const name of TERRAIN_BACKGROUNDS) {
-            const { program } = programs[name];
+        for (const { program } of [programs.contours, programs.ridgeHeights]) {
             gl.useProgram(program);
             for (const unit of [0, 1]) gl.uniform1i(gl.getUniformLocation(program, `cover${unit}`), unit);
         }
         uploadedHeights = [null, null];
-        glState = { gl, programs };
+        // The first passes draw through a framebuffer to a texture that's sized when drawn: the contour map's
+        // noise on unit 2, filtered, and the ridgelines' heights on unit 3, read a texel at a time.
+        const firstPass = (name, background, sampler, unit, filter) => {
+            const framebuffer = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture(unit, filter), 0);
+            gl.useProgram(programs[background].program);
+            gl.uniform1i(gl.getUniformLocation(programs[background].program, sampler), unit);
+            return { ...programs[name], framebuffer, unit, width: 0, height: 0 };
+        };
+        const firstPasses = {
+            contours: firstPass("contourNoise", "contours", "field", 2, gl.LINEAR),
+            ridges: firstPass("ridgeHeights", "ridges", "heights", 3, gl.NEAREST),
+        };
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        // Dithering would change the first passes' low bits, and the shaders add their own noise.
+        gl.disable(gl.DITHER);
+        glState = { gl, programs, firstPasses };
         return glState;
     }
 
@@ -2191,37 +2258,53 @@ void main() {
         glLast = now;
         if (settings.background === "sand") stepSand(now, dt, moving);
         else sand.fallen = null;
-        const { gl, programs } = glState;
-        const { program, uniforms } = programs[settings.background];
-        gl.useProgram(program);
+        const { gl, programs, firstPasses } = glState;
         const scale = Math.min(1, GL_MAX_PX[settings.background] / Math.max(glCanvas.clientWidth, glCanvas.clientHeight, 1));
         const width = Math.max(1, Math.round(glCanvas.clientWidth * scale));
         const height = Math.max(1, Math.round(glCanvas.clientHeight * scale));
         if (glCanvas.width !== width || glCanvas.height !== height) {
             glCanvas.width = width;
             glCanvas.height = height;
-            gl.viewport(0, 0, width, height);
         }
-        gl.uniform2f(uniforms.size, width, height);
-        gl.uniform1f(uniforms.pixel, scale);
-        gl.uniform1f(uniforms.time, glTime);
-        gl.uniform1f(uniforms.zoom, settings.bgZoom);
-        gl.uniform1f(uniforms.saturation, settings.bgColor);
         const colors = glColors.to.map((to, index) => glColors.from[index].map((v, k) => (v + (to[k] - v) * fade) / 255));
-        ["low", "high", "line"].forEach((name, index) => gl.uniform3f(uniforms[name], ...colors[index]));
-        gl.uniform3fv(uniforms.blobs, colors.slice(3).flat());
         terrain.heights.forEach((heights, unit) => {
             if (!heights || heights === uploadedHeights[unit]) return;
             gl.activeTexture(gl.TEXTURE0 + unit);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, TERRAIN_SIZE, TERRAIN_SIZE, 0, gl.RED, gl.UNSIGNED_BYTE, heights);
             uploadedHeights[unit] = heights;
         });
-        gl.uniform2f(uniforms.weights, terrain.heights[0] ? 1 : 0, terrain.heights[1] ? 1 : 0);
-        gl.uniform1f(uniforms.morph, terrain.front === 1 ? morph : 1 - morph);
-        gl.uniform1f(uniforms.progress, sand.fallen ?? 0);
-        gl.uniform1f(uniforms.turn, sand.turning === null ? 0 : (now - sand.turning) / SAND_TURN_MS);
-        gl.uniform1f(uniforms.falling, sand.turning === null && Player.data?.isPaused === false ? 1 : 0);
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        // The contour map and the ridgelines draw to a texture first, for the second pass to read.
+        const first = firstPasses[settings.background];
+        if (first) {
+            // A texel for every STEP canvas pixels, and one past the last; or a row per ridge.
+            const [w, h] = first === firstPasses.contours
+                ? [width, height].map((n) => Math.floor((n - 1) / GL_CONTOUR_STEP) + 2)
+                : [width, GL_RIDGES];
+            if (first.width !== w || first.height !== h) {
+                gl.activeTexture(gl.TEXTURE0 + first.unit);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+                Object.assign(first, { width: w, height: h });
+            }
+        }
+        const passes = [first, { ...programs[settings.background], framebuffer: null, width, height }].filter(Boolean);
+        for (const { program, uniforms, framebuffer, width: w, height: h } of passes) {
+            gl.useProgram(program);
+            gl.uniform2f(uniforms.size, width, height);
+            gl.uniform1f(uniforms.pixel, scale);
+            gl.uniform1f(uniforms.time, glTime);
+            gl.uniform1f(uniforms.zoom, settings.bgZoom);
+            gl.uniform1f(uniforms.saturation, settings.bgColor);
+            ["low", "high", "line"].forEach((name, index) => gl.uniform3f(uniforms[name], ...colors[index]));
+            gl.uniform3fv(uniforms.blobs, colors.slice(3).flat());
+            gl.uniform2f(uniforms.weights, terrain.heights[0] ? 1 : 0, terrain.heights[1] ? 1 : 0);
+            gl.uniform1f(uniforms.morph, terrain.front === 1 ? morph : 1 - morph);
+            gl.uniform1f(uniforms.progress, sand.fallen ?? 0);
+            gl.uniform1f(uniforms.turn, sand.turning === null ? 0 : (now - sand.turning) / SAND_TURN_MS);
+            gl.uniform1f(uniforms.falling, sand.turning === null && Player.data?.isPaused === false ? 1 : 0);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+            gl.viewport(0, 0, w, h);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+        }
         glFrame = moving || fade < 1 || morph < 1 ? requestAnimationFrame(drawGl) : 0;
     }
 
