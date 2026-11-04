@@ -39,10 +39,6 @@ A full-screen "now playing" view for [Spicetify](https://spicetify.app): big cov
 
 Click the expand button at the right of the playbar, or press **F**. Press **F** or **Esc** to leave.
 
-<img src="screenshots/settings.png" alt="Settings panel" width="260" align="right">
-
-Press **,** (comma) or click the gear icon to open the settings. Settings are saved automatically.
-
 ### Keyboard shortcuts
 
 | Key | Action |
@@ -61,6 +57,12 @@ Press **,** (comma) or click the gear icon to open the settings. Settings are sa
 | , | Settings |
 | ? | Show these shortcuts |
 | F / Esc | Close |
+
+### Settings
+
+Press **,** (comma) or click the gear icon to open the settings. They're saved automatically.
+
+<p align="center"><img src="screenshots/settings.png" alt="Settings panel" width="300"></p>
 
 ## Requirements
 
