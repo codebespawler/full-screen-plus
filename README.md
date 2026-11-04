@@ -2,8 +2,7 @@
 
 A full-screen "now playing" view for [Spicetify](https://spicetify.app): big cover art, an animated background made from the album art, synced lyrics, and the controls you need.
 
-> 📷 **SCREENSHOT: hero image** (`screenshots/hero.png`)
-> Layout "Cover beside details", background "Blurred art", lyrics on. Use a song with bright, colourful cover art and synced lyrics, paused partway through so the progress bar is part-filled. Take it at full screen, 1920×1080 if you can.
+![Full Screen Plus with synced lyrics](screenshots/hero.jpg)
 
 ## Features
 
@@ -16,8 +15,9 @@ A full-screen "now playing" view for [Spicetify](https://spicetify.app): big cov
 - **Clock:** optional, in 12- or 24-hour format, with or without the date
 - **Gets out of the way:** the cursor and controls hide when the mouse stops moving
 
-> 📷 **SCREENSHOT: layouts side by side** (`screenshots/layouts.png`)
-> Use one song for all three layouts: "Centred" and "TV: small cover in the corner", plus the hero shot. Crop or arrange them in a row. Something with a strong, simple cover works best here.
+| Cover beside details | Centred | TV |
+| --- | --- | --- |
+| ![Cover beside details](screenshots/layout-beside.jpg) | ![Centred](screenshots/layout-centred.jpg) | ![TV: small cover in the corner](screenshots/layout-tv.jpg) |
 
 ## Install
 
@@ -38,13 +38,9 @@ A full-screen "now playing" view for [Spicetify](https://spicetify.app): big cov
 
 Click the expand button at the right of the playbar, or press **F**. Press **F** or **Esc** to leave.
 
+<img src="screenshots/settings.png" alt="Settings panel" width="260" align="right">
+
 Press **,** (comma) or click the gear icon to open the settings. Settings are saved automatically.
-
-> 📷 **SCREENSHOT: settings panel** (`screenshots/settings.png`)
-> The settings panel open, with the "Look" and "Show" sections expanded. Any song works. A darker cover keeps the panel easy to read.
-
-> 📷 **SCREENSHOT: lyrics** (`screenshots/lyrics.png`)
-> Lyrics on, during a verse, so a highlighted line sits in the middle with lines above and below. Pick a song you like with well-known synced lyrics.
 
 ### Keyboard shortcuts
 

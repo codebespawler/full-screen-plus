@@ -1,0 +1,9 @@
+{
+    "name": "Full Screen Plus",
+    "description": "A full-screen now-playing view: animated album-art backgrounds, synced lyrics, three layouts and a clock.",
+    "preview": "screenshots/hero.jpg",
+    "main": "full-screen-plus.js",
+    "readme": "README.md",
+    "authors": [{ "name": "codebespawler", "url": "https://github.com/codebespawler" }],
+    "tags": ["fullscreen", "lyrics", "now playing"]
+}
