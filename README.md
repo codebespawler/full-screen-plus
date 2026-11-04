@@ -35,6 +35,17 @@ A full-screen "now playing" view for [Spicetify](https://spicetify.app): big cov
    spicetify apply
    ```
 
+## Uninstall
+
+If you installed it from Marketplace, open Marketplace, find Full Screen Plus and click **Remove**.
+
+If you installed it yourself, run:
+```
+spicetify config extensions full-screen-plus.js-
+spicetify apply
+```
+The `-` at the end takes it off your extensions list. You can then delete `full-screen-plus.js` from your `Extensions` folder.
+
 ## Use
 
 Click the expand button at the right of the playbar, or press **F**. Press **F** or **Esc** to leave.
