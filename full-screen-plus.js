@@ -21,7 +21,6 @@
     const SHORTCUT = "f";
     const IDLE_MS = 3000;
     const FADE_MS = 600;
-    // "Near the end" for the up-next card.
     const UP_NEXT_MS = 30000;
     // The background bitmaps are tiny on purpose: the GPU scales them up, which makes the blur almost free.
     const BG_SIZE = 128;
@@ -55,7 +54,6 @@
     const svg = (paths, size = "100%") =>
         `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 16 16" fill="currentColor">${paths}</svg>`;
 
-    // Same pattern as made-for-you-button.js: Encore's Icon wrapping Spotify's markup.
     const iconComponent = (paths, iconSize) => {
         const html = { __html: svg(paths) };
         return () => h(ReactComponent.IconComponent, { iconSize, dangerouslySetInnerHTML: html });
@@ -80,7 +78,6 @@
         collapse: iconComponent(ICONS.collapse, 20),
     };
 
-    // Spotify's own wording where it has it, so the controls read like the playbar's.
     function spotifyText(key, fallback) {
         try {
             const text = Spicetify.Locale?.get?.(key);
@@ -222,7 +219,6 @@
     let settingsOpen = false;
     let helpOpen = false;
 
-    // Which settings sections are unfolded, by title.
     const SECTIONS_KEY = "fsa-sections";
     let openSections = readStored(SECTIONS_KEY, { Look: true });
 
@@ -245,7 +241,6 @@
         if (!settings.lyrics) notedMissing = "";
         syncLyricsPlus();
         applyClasses();
-        // Redraws the background only if the blur or colour changed.
         if (isOpen) showArt(currentTrack);
         loadExtras();
         renderAll();
@@ -316,7 +311,6 @@
             title: item.name || meta.title || "",
             artists: artistNames(item),
             artistUri: item.artists?.[0]?.uri || meta.artist_uri || "",
-            // Each artist with their page, for links; only when the names come from the artists list.
             artistLinks: (item.artists ?? []).filter((artist) => artist?.name).map(({ name, uri }) => ({ name, uri })),
             album: item.album?.name || meta.album_title || "",
             albumUri: item.album?.uri || meta.album_uri || "",
@@ -387,7 +381,6 @@
     --fsa-subtext: var(--spice-subtext);
     --fsa-rgb-text: var(--spice-rgb-text);
     --fsa-cover-size: min(62vh, 40vw);
-    /* Background layer size and shade strength, set from the settings. */
     --fsa-zoom: 1;
     --fsa-dim: 1;
     color: var(--fsa-text);
@@ -613,7 +606,6 @@
 .fsa-album:empty {
     display: none;
 }
-/* Title, artists, album and "Playing from" open their page in Spotify. */
 .fsa-link {
     color: inherit;
     text-decoration: none;
@@ -657,7 +649,6 @@
 .fsa-seekable:hover .fsa-track {
     height: 6px;
 }
-/* The time under the pointer, above the bar. */
 .fsa-bar-tip {
     position: absolute;
     bottom: calc(100% + 4px);
@@ -966,7 +957,6 @@
 .fsa-settings-section:hover {
     color: var(--spice-text);
 }
-/* Points down when open, right when folded. */
 .fsa-chevron {
     width: 6px;
     height: 6px;
@@ -1172,7 +1162,6 @@
     }
 }
 
-/* Lyrics take the right-hand side and the cover and details stack on the left, whatever the layout. */
 #fsa-root.fsa-lyrics-on .fsa-stage {
     display: grid;
     grid-template-columns: minmax(0, min(32vw, 560px)) minmax(0, 1fr);
@@ -1208,7 +1197,6 @@
     /* Fill its cell rather than growing to the whole song's height. */
     align-self: stretch;
 }
-/* On a tall screen the lyrics go underneath instead. */
 @media (max-aspect-ratio: 1/1) {
     #fsa-root.fsa-lyrics-on .fsa-stage {
         grid-template-columns: minmax(0, 1fr);
@@ -1431,7 +1419,6 @@
         }
     }
 
-    // Blur a small copy of the art; scaled up by the GPU it looks like a huge blur for almost no cost.
     function paintBlur(canvas, image, soft) {
         const ctx = canvas.getContext("2d");
         const blurPx = Number((BG_BLUR * settings.bgBlur).toFixed(1));
@@ -1463,7 +1450,6 @@
 
     let shownArt = null;
     let artToken = 0;
-    // What's on screen now: the art's URLs and the small image the background was drawn from.
     let onScreen = { cover: null, bg: null, source: null };
 
     async function showArt(track) {
@@ -1485,7 +1471,6 @@
         artFader.settle();
         const [coverImg, ...bgCanvases] = artFader.back();
 
-        // The cover and the small copy for the background load side by side.
         const source = document.createElement("img");
         if (!coverUrl) coverImg.removeAttribute("src");
         const [coverOn, sourceOn] = await Promise.all([
@@ -1626,7 +1611,6 @@
     }
 
     async function loadLyrics(track) {
-        // Already loaded, loading, or known to have none for this play of the song.
         if (lyrics?.uri === track.uri) return;
         if (!track.isTrack || !Spicetify.CosmosAsync?.get) {
             setLyrics({ uri: track.uri, status: "none" });
@@ -1727,7 +1711,6 @@
     lyricsPlusBox.className = "fsa-lyrics-plus";
     // "loading" | "ready" | "none", read from what Lyrics Plus shows.
     let lyricsPlusStatus = "loading";
-    // Whether we opened its page, and so should go back from it.
     let lyricsPlusPushed = false;
 
     const lyricsPlusInstalled = () => (Spicetify.Config?.custom_apps ?? []).includes("lyrics-plus");
@@ -1753,7 +1736,6 @@
         if (wanted === lyricsPlusBox.isConnected) return;
         const history = Spicetify.Platform?.History;
         if (wanted) {
-            // Our own lyrics make way.
             lyrics = null;
             renderLyrics();
             lyricsPlusStatus = "loading";
@@ -1868,7 +1850,6 @@
         }, 400);
     }
 
-    // How far along the bar the pointer is, 0 to 1 (null if the bar has no size).
     function barFraction(event) {
         const rect = event.currentTarget.getBoundingClientRect();
         if (!rect.width) return null;
@@ -1882,7 +1863,6 @@
 
     const tipRef = (node) => (refs.tip = node);
 
-    // The time a click would seek to, following the pointer.
     function showBarTime(event) {
         const fraction = barFraction(event);
         const duration = Player.getDuration?.() || 0;
@@ -2006,7 +1986,6 @@
 
     let toastTimer = 0;
 
-    // A brief note for changes made from the keyboard, which may not be visible otherwise.
     function showToast(text) {
         toast.textContent = text;
         toast.classList.add("fsa-toast-on");
@@ -2120,7 +2099,6 @@
         return ReactComponent.TooltipWrapper ? h(ReactComponent.TooltipWrapper, { label }, button) : button;
     }
 
-    // Text that opens its page in Spotify; plain text when it has none.
     function Link({ uri, children }) {
         const path = uriToPath(uri);
         if (!path) return children;
@@ -2366,7 +2344,6 @@
         const toggle = (name, label) => row(label, h(SettingToggle, { name, label }));
         const select = (name, label) => row(label, h(SettingSelect, { name, label }));
         const slider = (name) => row(SLIDERS[name].label, h(SettingSlider, { name }));
-        // A heading that folds its rows away. Which sections are open is remembered.
         const section = (title, rows) => {
             const open = !!openSections[title];
             return h(
@@ -2399,7 +2376,6 @@
             section("Look", [
                 select("layout", "Layout"),
                 select("background", "Background"),
-                // Only the options that do something for the chosen background.
                 art && select("bgMotion", "Motion"),
                 art && settings.bgMotion !== "still" && slider("bgSpeed"),
                 art && slider("bgZoom"),
@@ -2616,10 +2592,8 @@
     let isOpen = false;
     let ownsFullscreen = false;
     let unsubscribe = [];
-    // A page to show once the overlay has closed (see openPage).
     let leavingTo = null;
 
-    // Opens a page in Spotify (an album, artist or playlist), closing the overlay to show it.
     function openPage(path) {
         leavingTo = path;
         close();
