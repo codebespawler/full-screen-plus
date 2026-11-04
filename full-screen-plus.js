@@ -600,7 +600,6 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    color: var(--fsa-subtext);
 }
 .fsa-artists {
     margin-top: 0.6em;
@@ -622,7 +621,6 @@
     height: 0.85em;
     margin-right: 0.35em;
     vertical-align: -0.12em;
-    opacity: 0.7;
     transition: opacity 0.2s;
 }
 .fsa-title .fsa-info-icon {
@@ -637,10 +635,13 @@
     opacity: 0;
 }
 #fsa-root.fsa-icons-hover .fsa-panel:hover .fsa-info-icon {
-    opacity: 0.7;
+    opacity: 1;
+}
+/* Inside Spotify something else colours links; without this they differ from the rest of their line. */
+#fsa-root .fsa-link {
+    color: inherit !important;
 }
 .fsa-link {
-    color: inherit;
     text-decoration: none;
     cursor: pointer;
 }
