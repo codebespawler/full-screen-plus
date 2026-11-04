@@ -27,6 +27,7 @@
     // So the background is blurred from a small copy of the art, not the full-size one.
     const BG_SOURCE_MIN = 200;
     const SETTINGS_KEY = "fsa-settings";
+    const REPO_URL = "https://github.com/codebespawler/full-screen-plus";
 
     // Spotify's own 16px icons, taken from its app bundle so the controls match the native ones.
     const ICONS = {
@@ -1056,6 +1057,23 @@
 .fsa-button:disabled {
     opacity: 0.4;
     cursor: default;
+}
+.fsa-settings-footer {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-top: 8px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(var(--spice-rgb-text), 0.1);
+    font-size: 12px;
+}
+#fsa-root .fsa-settings-footer a {
+    color: var(--spice-subtext) !important;
+    text-decoration: none;
+}
+#fsa-root .fsa-settings-footer a:hover {
+    color: var(--spice-text) !important;
+    text-decoration: underline;
 }
 .fsa-settings-note {
     margin: 4px 0;
@@ -2479,8 +2497,23 @@
                     h("span", null, "Keyboard shortcuts"),
                     h("button", { className: "fsa-button", onMouseDown: keepFocus, onClick: () => toggleHelp(true) }, "Show (?)")
                 ),
-            ])
+            ]),
+            h(
+                "div",
+                { className: "fsa-settings-footer" },
+                h(WebLink, { url: REPO_URL }, "Star on GitHub"),
+                h(WebLink, { url: `${REPO_URL}/issues/new` }, "Got an issue?")
+            )
         );
+    }
+
+    // Opens in the default browser; Spotify itself only follows its own pages.
+    function WebLink({ url, children }) {
+        const onClick = (event) => {
+            event.preventDefault();
+            window.open(url, "_blank");
+        };
+        return h("a", { href: url, target: "_blank", rel: "noopener noreferrer", onMouseDown: keepFocus, onClick }, children);
     }
 
     function Chrome(view) {
